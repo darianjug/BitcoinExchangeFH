@@ -1,3 +1,5 @@
+from functools import partial
+
 from befh.api_socket import ApiSocket
 from befh.util import Logger
 import websocket
@@ -46,7 +48,7 @@ class WebSocketApiClient(ApiSocket):
                            argument
         :param reconnect_interval: The time interval for reconnection
         """
-        Logger.info(self.__class__.__name__, "Connecting to socket <%s>..." % self.id)
+
         if on_message_handler is not None:
             self.on_message_handlers.append(on_message_handler)
         if on_open_handler is not None:
@@ -57,14 +59,17 @@ class WebSocketApiClient(ApiSocket):
             self.on_error_handlers.append(on_error_handler)
 
         if not self._connecting and not self._connected:
+            Logger.info(self.__class__.__name__, "Connecting to socket <%s>..." % self.id)
             self._connecting = True
             self.ws = websocket.WebSocketApp(url,
-                                             on_message=self.__on_message,
-                                             on_close=self.__on_close,
-                                             on_open=self.__on_open,
-                                             on_error=self.__on_error)
+                                             on_message=partial(self.__on_message, self.ws),
+                                             on_close=partial(self.__on_close, self.ws),
+                                             on_open=partial(self.__on_open, self.ws),
+                                             on_error=partial(self.__on_error, self.ws))
             self.wst = threading.Thread(target=lambda: self.__start(reconnect_interval=reconnect_interval))
             self.wst.start()
+        else:
+            Logger.info(self.__class__.__name__, "Already connecting or connected <%s>..." % self.id)
 
         return self.wst
 
@@ -82,7 +87,7 @@ class WebSocketApiClient(ApiSocket):
             Logger.info(self.__class__.__name__, "Socket <%s> is going to reconnect..." % self.id)
             time.sleep(reconnect_interval)
 
-    def __on_message(self, ws, m):
+    def __on_message(self, foo, ws, m):
         if self._received_data_compressed is True:
             data = zlib.decompress(m, zlib.MAX_WBITS|16).decode('UTF-8')
             m = json.loads(data)
@@ -92,26 +97,35 @@ class WebSocketApiClient(ApiSocket):
             for handler in self.on_message_handlers:
                 handler(m)
 
-    def __on_open(self, ws):
+    def __on_open(self, foo, ws):
         Logger.info(self.__class__.__name__, "Socket <%s> is opened." % self.id)
         self._connected = True
         if len(self.on_open_handlers) > 0:
             for handler in self.on_open_handlers:
-                handler(ws)
+                try:
+                    handler(ws)
+                except Exception as e:
+                    print(e)
         
-    def __on_close(self, ws):
+    def __on_close(self, foo, ws):
         Logger.info(self.__class__.__name__, "Socket <%s> is closed." % self.id)
         self._connecting = False
         self._connected = False
         if len(self.on_close_handlers) > 0:
             for handler in self.on_close_handlers:
-                handler(ws)
+                try:
+                    handler(ws)
+                except Exception as e:
+                    print(e)
         
-    def __on_error(self, ws, error):
+    def __on_error(self, foo, ws, error):
         Logger.info(self.__class__.__name__, "Socket <%s> error:\n %s" % (self.id, error))
         if len(self.on_error_handlers) > 0:
             for handler in self.on_error_handlers:
-                handler(ws, error)
+                try:
+                    handler(ws, error)
+                except Exception as e:
+                    print(e)
 
 if __name__ == '__main__':
     Logger.init_log()

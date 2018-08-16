@@ -63,6 +63,9 @@ class Instrument(object):
     def get_instmt_code(self):
         return self.instmt_code
 
+    def get_instmt_trades_table_name(self):
+        return self.instmt_trades_table_name
+
     def get_instmt_snapshot_table_name(self):
         return self.instmt_snapshot_table_name
 
@@ -98,6 +101,9 @@ class Instrument(object):
 
     def set_trade_id(self, trade_id):
         self.trade_id = trade_id
+
+    def set_instmt_trades_table_name(self, instmt_trades_table_name):
+        self.instmt_trades_table_name = instmt_trades_table_name
         
     def set_instmt_snapshot_table_name(self, instmt_snapshot_table_name):
         self.instmt_snapshot_table_name = instmt_snapshot_table_name

@@ -1,4 +1,5 @@
 #!/bin/python
+from befh.clients.postgresql import PostgresqlClient
 from befh.clients.zmq import ZmqClient
 from befh.clients.csv import FileClient
 from befh.clients.mysql import MysqlClient
@@ -29,6 +30,7 @@ class ExchangeGateway:
         self.api_socket = api_socket
         self.lock = Lock()
         self.exch_snapshot_id = 0
+        self.exch_trades_id = 0
         self.date_time = datetime.utcnow().date()
 
     @classmethod
@@ -50,6 +52,17 @@ class ExchangeGateway:
         return 'exch_' + exchange.lower() + '_' + instmt_name.lower() + \
                '_snapshot_' + self.date_time.strftime("%Y%m%d")
 
+    def get_instmt_trades_table_name(self, exchange, instmt_name):
+        """
+        Get instmt trades
+        :param exchange: Exchange name
+        :param instmt_name: Instrument name
+        """
+        #return 'exch_' + exchange.lower() + '_' + instmt_name.lower() + \
+        #       '_snapshot_' + datetime.utcnow().strftime("%Y%m%d")
+        return 'exch_' + exchange.lower() + '_' + instmt_name.lower() + \
+               '_trades_' + self.date_time.strftime("%Y%m%d")
+
     @classmethod
     def get_snapshot_table_name(cls):
         return 'exchanges_snapshot'
@@ -70,6 +83,30 @@ class ExchangeGateway:
                              Snapshot.types(),
                              [0,1], is_ifnotexists=True)
 
+    def init_instmt_trades_table(self, instmt):
+        table_name = self.get_instmt_trades_table_name(instmt.get_exchange_name(),
+                                                       instmt.get_instmt_name())
+
+        instmt.set_instmt_trades_table_name(table_name)
+
+        for db_client in self.db_clients:
+            db_client.create(table_name,
+                             ['id'] + Trade.columns(),
+                             ['int'] + Trade.types(),
+                             [0], is_ifnotexists=True)
+
+            if isinstance(db_client, (MysqlClient, SqliteClient, PostgresqlClient)):
+                with self.lock:
+                    r = db_client.execute('select max(id) from {};'.format(table_name))
+                    db_client.conn.commit()
+                    if r:
+                        res = db_client.cursor.fetchone()
+                        max_id = res['max(id)'] if isinstance(db_client, MysqlClient) else res[0]
+                        if max_id:
+                            self.exch_trades_id = max_id
+                        else:
+                            self.exch_trades_id = 0
+
     def init_instmt_snapshot_table(self, instmt):
         table_name = self.get_instmt_snapshot_table_name(instmt.get_exchange_name(),
                                                          instmt.get_instmt_name())
@@ -82,7 +119,7 @@ class ExchangeGateway:
                              ['int'] + Snapshot.types(False),
                              [0], is_ifnotexists=True)
 
-            if isinstance(db_client, (MysqlClient, SqliteClient)):
+            if isinstance(db_client, (MysqlClient, SqliteClient, PostgresqlClient)):
                 with self.lock:
                     r = db_client.execute('select max(id) from {};'.format(table_name))
                     db_client.conn.commit()
@@ -101,6 +138,12 @@ class ExchangeGateway:
         :return List of threads
         """
         return []
+
+    def get_instmt_trades_id(self, instmt):
+        with self.lock:
+            self.exch_trades_id += 1
+
+        return self.exch_trades_id
 
     def get_instmt_snapshot_id(self, instmt):
         with self.lock:
@@ -166,6 +209,18 @@ class ExchangeGateway:
 
         # Set the last trade to the current one
         instmt.set_last_trade(trade)
+
+        for db_client in self.db_clients:
+            is_allowed_instmt_record = self.is_allowed_instmt_record(db_client)
+
+            id = self.get_instmt_trades_id(instmt)
+            db_client.insert(table=instmt.get_instmt_trades_table_name(),
+                             columns=['id'] + Trade.columns(),
+                             values=[id] + trade.values(),
+                             types=['int'] +Trade.types(),
+                             primary_key_index=[0, 1],
+                             is_orreplace=True,
+                             is_commit=not is_allowed_instmt_record)
 
         # Update the snapshot
         if instmt.get_l2_depth() is not None and \

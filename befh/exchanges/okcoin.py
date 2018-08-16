@@ -7,8 +7,8 @@ import time
 import threading
 import json
 from functools import partial
-from datetime import datetime
-
+from datetime import datetime, timedelta
+import pytz
 
 class ExchGwOkCoinWs(WebSocketApiClient):
     """
@@ -34,7 +34,7 @@ class ExchGwOkCoinWs(WebSocketApiClient):
 
     @classmethod
     def get_link(cls):
-        return 'wss://real.okcoin.com:10440/websocket/okcoinapi'
+        return 'wss://real.okcoin.com:10440/websocket'
 
     @classmethod
     def get_order_book_subscription_string(cls, instmt):
@@ -95,6 +95,21 @@ class ExchGwOkCoinWs(WebSocketApiClient):
         timestamp = raw[3]
         trade_side = raw[4]
 
+        timestamp_split = timestamp.split(':')
+        hour = int(timestamp_split[0])
+        minute = int(timestamp_split[1])
+        second = int(timestamp_split[2])
+
+        trade_date = datetime.now(pytz.timezone('Asia/Shanghai'))
+        trade_date = trade_date.replace(hour=hour, minute=minute, second=second)
+
+        now = datetime.now(pytz.timezone('Asia/Shanghai'))
+
+        if trade_date > now:
+            trade_date = trade_date - timedelta(1)
+
+        trade.date_time = trade_date.astimezone(pytz.UTC)
+
         trade.trade_id = trade_id + timestamp
         trade.trade_price = trade_price
         trade.trade_volume = trade_volume
@@ -132,20 +147,23 @@ class ExchGwOkCoin(ExchangeGateway):
                   (instmt.get_instmt_code(), instmt.get_exchange_name()))
         if not instmt.get_subscribed():
             instmt_code_split = instmt.get_instmt_code().split('_')
-            if len(instmt_code_split) == 3:
-                # Future instruments
-                instmt.set_order_book_channel_id("ok_sub_%s_%s_depth_%s_20" % \
-                                                 (instmt_code_split[0],
-                                                  instmt_code_split[1],
-                                                  instmt_code_split[2]))
-                instmt.set_trades_channel_id("ok_sub_%s_%s_trade_%s" % \
-                                               (instmt_code_split[0],
-                                                instmt_code_split[1],
-                                                instmt_code_split[2]))
-            else:
-                # Spot instruments
-                instmt.set_order_book_channel_id("ok_sub_%s_depth_20" % instmt.get_instmt_code())
-                instmt.set_trades_channel_id("ok_sub_%s_trades" % instmt.get_instmt_code())
+            #if len(instmt_code_split) == 3:
+            #    # Future instruments
+            #    instmt.set_order_book_channel_id("ok_sub_%s_%s_depth_%s_20" % \
+            #                                     (instmt_code_split[0],
+            #                                      instmt_code_split[1],
+            #                                      instmt_code_split[2]))
+            #    instmt.set_trades_channel_id("ok_sub_%s_%s_deals_%s" % \
+            #                                   (instmt_code_split[0],
+            #                                    instmt_code_split[1],
+            #                                    instmt_code_split[2]))
+            #else:
+            # Spot instruments
+            instmt.set_order_book_channel_id("ok_sub_%s_depth_20" % instmt.get_instmt_code())
+            instmt.set_trades_channel_id("ok_sub_%s_deals" % instmt.get_instmt_code())
+
+            a = self.api_socket.get_trades_subscription_string(instmt)
+            t = self.api_socket.get_order_book_subscription_string(instmt)
 
             ws.send(self.api_socket.get_order_book_subscription_string(instmt))
             ws.send(self.api_socket.get_trades_subscription_string(instmt))
@@ -205,7 +223,10 @@ class ExchGwOkCoin(ExchangeGateway):
         instmt.set_l2_depth(L2Depth(20))
         instmt.set_instmt_snapshot_table_name(self.get_instmt_snapshot_table_name(instmt.get_exchange_name(),
                                                                                   instmt.get_instmt_name()))
+        instmt.set_instmt_trades_table_name(self.get_instmt_trades_table_name(instmt.get_exchange_name(),
+                                                                              instmt.get_instmt_name()))
         self.init_instmt_snapshot_table(instmt)
+        self.init_instmt_trades_table(instmt)
         return [self.api_socket.connect(self.api_socket.get_link(),
                                         on_message_handler=partial(self.on_message_handler, instmt),
                                         on_open_handler=partial(self.on_open_handler, instmt),

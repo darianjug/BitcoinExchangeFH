@@ -253,7 +253,10 @@ class ExchGwBinance(ExchangeGateway):
         instmt.set_prev_l2_depth(L2Depth(5))
         instmt.set_instmt_snapshot_table_name(self.get_instmt_snapshot_table_name(instmt.get_exchange_name(),
                                                                                   instmt.get_instmt_name()))
+        instmt.set_instmt_trades_table_name(self.get_instmt_trades_table_name(instmt.get_exchange_name(),
+                                                                              instmt.get_instmt_name()))
         self.init_instmt_snapshot_table(instmt)
+        self.init_instmt_trades_table(instmt)
         instmt.set_recovered(False)
         t1 = Thread(target=partial(self.get_order_book_worker, instmt))
         t2 = Thread(target=partial(self.get_trades_worker, instmt))

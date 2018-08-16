@@ -27,6 +27,7 @@ from befh.exchanges.bitflyer import ExchGwBitflyer
 from befh.exchanges.coinone import ExchGwCoinOne
 from befh.clients.kdbplus import KdbPlusClient
 from befh.clients.mysql import MysqlClient
+from befh.clients.postgresql import PostgresqlClient
 from befh.clients.sqlite import SqliteClient
 from befh.clients.csv import FileClient
 from befh.clients.zmq import ZmqClient
@@ -42,13 +43,23 @@ def main():
     parser.add_argument('-csv', action='store_true', help='Use csv file as database.')
     parser.add_argument('-sqlite', action='store_true', help='Use SQLite database.')
     parser.add_argument('-mysql', action='store_true', help='Use MySQL.')
+    parser.add_argument('-postgresql', action='store_true', help='Use PostgreSQL.')
     parser.add_argument('-zmq', action='store_true', help='Use zmq publisher.')
+
+    parser.add_argument('-postgresqldest', action='store', dest='postgresqldest',
+                        help='PostgreSQL destination. Formatted as <name:pwd@host:port>',
+                        default='')
+    parser.add_argument('-postgresqlschema', action='store', dest='postgresqlschema',
+                        help='PostgreSQL schema.',
+                        default='')
+
     parser.add_argument('-mysqldest', action='store', dest='mysqldest',
                         help='MySQL destination. Formatted as <name:pwd@host:port>',
                         default='')
     parser.add_argument('-mysqlschema', action='store', dest='mysqlschema',
                         help='MySQL schema.',
                         default='')
+
     parser.add_argument('-kdbdest', action='store', dest='kdbdest',
                         help='Kdb+ destination. Formatted as <host:port>',
                         default='')
@@ -74,6 +85,7 @@ def main():
         db_client.connect(path=args.sqlitepath)
         db_clients.append(db_client)
         is_database_defined = True
+
     if args.mysql:
         db_client = MysqlClient()
         mysqldest = args.mysqldest
@@ -86,6 +98,20 @@ def main():
                           schema=args.mysqlschema)
         db_clients.append(db_client)
         is_database_defined = True
+
+    if args.postgresql:
+        db_client = PostgresqlClient()
+        postgresqldest = args.postgresqldest
+        logon_credential = postgresqldest.split('@')[0]
+        connection = postgresqldest.split('@')[1]
+        db_client.connect(host=connection.split(':')[0],
+                          port=int(connection.split(':')[1]),
+                          user=logon_credential.split(':')[0],
+                          pwd=logon_credential.split(':')[1],
+                          schema=args.postgresqlschema)
+        db_clients.append(db_client)
+        is_database_defined = True
+
     if args.csv:
         if args.csvpath != '':
             db_client = FileClient(dir=args.csvpath)
@@ -93,11 +119,13 @@ def main():
             db_client = FileClient()
         db_clients.append(db_client)
         is_database_defined = True
+
     if args.kdb:
         db_client = KdbPlusClient()
         db_client.connect(host=args.kdbdest.split(':')[0], port=int(args.kdbdest.split(':')[1]))
         db_clients.append(db_client)
         is_database_defined = True
+
     if args.zmq:
         db_client = ZmqClient()
         db_client.connect(addr=args.zmqdest)

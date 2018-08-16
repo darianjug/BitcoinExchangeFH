@@ -268,7 +268,10 @@ class ExchGwBitfinex(ExchangeGateway):
         instmt.set_prev_l2_depth(L2Depth(25))
         instmt.set_instmt_snapshot_table_name(self.get_instmt_snapshot_table_name(instmt.get_exchange_name(),
                                                                                   instmt.get_instmt_name()))
+        instmt.set_instmt_trades_table_name(self.get_instmt_trades_table_name(instmt.get_exchange_name(),
+                                                                              instmt.get_instmt_name()))
         self.init_instmt_snapshot_table(instmt)
+        self.init_instmt_trades_table(instmt)
         return [self.api_socket.connect(self.api_socket.get_link(),
                                         on_message_handler=partial(self.on_message_handler, instmt),
                                         on_open_handler=partial(self.on_open_handler, instmt),
