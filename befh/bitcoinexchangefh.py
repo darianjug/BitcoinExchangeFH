@@ -3,6 +3,7 @@
 import argparse
 import sys
 
+from befh.clients.redis import RedisClient
 from befh.exchanges.gateway import ExchangeGateway
 from befh.exchanges.bitmex import ExchGwBitmex
 from befh.exchanges.btcc import ExchGwBtccSpot, ExchGwBtccFuture
@@ -45,6 +46,7 @@ def main():
     parser.add_argument('-mysql', action='store_true', help='Use MySQL.')
     parser.add_argument('-postgresql', action='store_true', help='Use PostgreSQL.')
     parser.add_argument('-zmq', action='store_true', help='Use zmq publisher.')
+    parser.add_argument('-redis', action='store_true', help='Use Redis.')
 
     parser.add_argument('-postgresqldest', action='store', dest='postgresqldest',
                         help='PostgreSQL destination. Formatted as <name:pwd@host:port>',
@@ -63,9 +65,18 @@ def main():
     parser.add_argument('-kdbdest', action='store', dest='kdbdest',
                         help='Kdb+ destination. Formatted as <host:port>',
                         default='')
+
     parser.add_argument('-zmqdest', action='store', dest='zmqdest',
                         help='Zmq destination. For example \"tcp://127.0.0.1:3306\"',
                         default='')
+
+    parser.add_argument('-redisdest', action='store', dest='redisdest',
+                        help='Redis destination. Formatted as <host:port>')
+
+    parser.add_argument('-redisdb', action='store', dest='redisdb',
+                        help='Redis DB. For example \"0\"')
+
+
     parser.add_argument('-sqlitepath', action='store', dest='sqlitepath',
                         help='SQLite database path',
                         default='')
@@ -129,6 +140,14 @@ def main():
     if args.zmq:
         db_client = ZmqClient()
         db_client.connect(addr=args.zmqdest)
+        db_clients.append(db_client)
+        is_database_defined = True
+
+    if args.redis:
+        db_client = RedisClient()
+        db_client.connect(host=args.redisdest.split(':')[0],
+                          port=int(args.redisdest.split(':')[1]),
+                          db=int(args.redisdb))
         db_clients.append(db_client)
         is_database_defined = True
 
