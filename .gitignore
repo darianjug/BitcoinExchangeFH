@@ -11,6 +11,7 @@ inspection/*
 *.egg-info/*
 subscriptions.ini
 subscriptions.ini.old
+dump.rdb
 
 # Created by https://www.gitignore.io/api/venv,pydev,macos,linux,python,windows,intellij+all
 

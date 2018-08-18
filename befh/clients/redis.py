@@ -1,6 +1,9 @@
 import json
 from datetime import datetime
 
+import pytz
+from pytz import utc
+
 from befh.clients.database import DatabaseClient
 from befh.util import Logger
 import threading
@@ -14,7 +17,11 @@ class RedisClient(DatabaseClient):
     """
     Redis Client
     """
-    trades_table_regex = re.compile("exch_.*_.*_trades_[0-9]{8}")
+
+    _REDIS_KEY_PREFIX = "befh_"
+    _EXCHANGES_SNAPSHOT_TABLE_NAME = "exchanges_snapshot"
+    _TRADES_TABLE_PREFIX = re.compile("exch_(.*)_(.*)_trades_[0-9]{8}")
+
     def __init__(self):
         """
         Constructor
@@ -83,45 +90,63 @@ class RedisClient(DatabaseClient):
                           e.g. [0] means the first column is the primary key
         :param is_orreplace: Indicate if the query is "INSERT OR REPLACE"
         """
-        if table == "exchanges_snapshot":
+
+        # If it's an exchange snapshot table SET all column values into Redis and also publish the values as JSON.
+        if table == RedisClient._EXCHANGES_SNAPSHOT_TABLE_NAME:
             ret = dict(zip(columns, values))
             ret['table'] = table
             json_ret = json.dumps(ret)
+
             exchange = ret['exchange']
             instrument = ret['instmt']
 
             self.lock.acquire()
             for column in columns:
-                key = "%s_%s_%s" % (exchange, instrument, column)
+                key = "%ses_%s_%s_%s" % (RedisClient._REDIS_KEY_PREFIX,
+                                         exchange.lower(),
+                                         instrument.lower(),
+                                         column.lower())
                 value = ret[column]
                 self.conn.set(key, value)
 
-            self.conn.publish("bitcoin_exchange_fh", json_ret)
+            self.conn.publish("%ses" % RedisClient._REDIS_KEY_PREFIX, json_ret)
             self.lock.release()
-        elif RedisClient.trades_table_regex.match(table):
-            ret = dict(zip(columns, values))
-            ret['table'] = table
-            exchange = "exchange"
-            instrument = "instrument"
-            trade_price = str(ret['trade_price'])
-            trade_volume = str(ret['trade_volume'])
+        else:
+            # If it's the trades table add the amount and volume to the period trades list and add the period to the
+            # period queue.
+            trades_table_match = RedisClient._TRADES_TABLE_PREFIX.match(table)
+            if trades_table_match:
+                ret = dict(zip(columns, values))
+                ret['table'] = table
 
-            trade_date = datetime.strptime(ret['date_time'], '%Y%m%d %H:%M:%S.%f')
+                exchange = trades_table_match.group(1)
+                instrument = trades_table_match.group(2)
 
-            year = trade_date.year
-            month = trade_date.month
-            day = trade_date.day
-            hour = trade_date.hour
-            minute = trade_date.minute
-            second = trade_date.second
+                trade_price = str(ret['trade_price'])
+                trade_volume = str(ret['trade_volume'])
 
+                trade_date = pytz.utc.localize(datetime.strptime(ret['date_time'], '%Y%m%d %H:%M:%S.%f'))
+                epoch = int(trade_date.strftime("%s"))
 
+                now = datetime.now(tz=utc)
 
-            lkey = "%s_%s_%d%d%d_%d%d%d" % (exchange, instrument, year, month, day, hour, minute, second)
-            val = "/".join([trade_price, trade_volume])
-            self.conn.lpush(lkey, val)
+                # Delay between now and trade date.
+                print("%{}".format(now - trade_date))
 
-            print(trade_date)
+                period_key = "%setp_%s_%s_%d" % (RedisClient._REDIS_KEY_PREFIX,
+                                                 exchange,
+                                                 instrument,
+                                                 epoch)
+                queue_key = "%setpq_%s_%s" % (RedisClient._REDIS_KEY_PREFIX,
+                                              exchange,
+                                              instrument)
+
+                val = "/".join([trade_price, trade_volume])
+
+                self.lock.acquire()
+                self.conn.lpush(period_key, val)
+                self.conn.zadd(queue_key, epoch, period_key)
+                self.lock.release()
         return True
 
     def select(self, table, columns=['*'], condition='', orderby='', limit=0, isFetchAll=True):

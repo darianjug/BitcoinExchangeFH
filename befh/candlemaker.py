@@ -1,59 +1,106 @@
 #!/bin/python
 import argparse
+import re
 import sys
+from typing import List
 
 import redis
 from crontabs import Cron, Tab
 from datetime import datetime, timedelta
 
+from befh.instrument import Instrument
+from befh.subscription_manager import SubscriptionManager
 from befh.util import Logger
 
-def parse_trades(vals):
-    ret = []
-    for val in vals:
-        str_val = val.decode('utf-8')
-        val_split = str_val.split('/')
-        price = float(val_split[0])
-        volume = float(val_split[1])
-        ret.append((price, volume))
-    return ret
+class OhlcvProcessor:
+    """
+    Redis OHLCV Client
+    """
 
-def get_ohlcv(trades):
-    if not len(trades):
-        return 0, 0, 0, 0, 0
+    _REDIS_KEY_PREFIX = "befh_"
+    _PERIOD_REGEX = re.compile(".*_.*_([0-9]{10})")
+    _REDIS_QUEUE_KEY_FORMAT = "%setpq_%s_%s"
 
-    prices = [x[0] for x in trades]
-    volumes = [x[1] for x in trades]
+    def __init__(self, conn: redis.StrictRedis):
+        """
+        Constructor
+        """
+        self.lock = False
+        self.conn = conn
 
-    open = prices[0]
-    high = max(prices)
-    low = min(prices)
-    close = prices[-1]
-    volume = sum(volumes)
-    return open, high, low, close, volume
+    def _parse_trades(self, vals):
+        ret = []
+        for val in vals:
+            str_val = val.decode('utf-8')
+            val_split = str_val.split('/')
+            price = float(val_split[0])
+            volume = float(val_split[1])
+            ret.append((price, volume))
+        return ret
 
-def my_job(*args, **kwargs):
-    conn: redis.StrictRedis = kwargs['conn']
-    exchange = "exchange"
-    instrument = "instrument"
+    def _trades_ohlcv(self, trades):
+        if not len(trades):
+            return 0, 0, 0, 0, 0
 
-    now = datetime.utcnow() - timedelta(seconds=1)
-    year = now.year
-    month = now.month
-    day = now.day
-    hour = now.hour
-    minute = now.minute
-    second = now.second
+        prices = [x[0] for x in trades]
+        volumes = [x[1] for x in trades]
 
-    lkey = "%s_%s_%d%d%d_%d%d%d" % (exchange, instrument, year, month, day, hour, minute, second)
+        open = prices[0]
+        high = max(prices)
+        low = min(prices)
+        close = prices[-1]
+        volume = sum(volumes)
+        return open, high, low, close, volume
 
-    val = conn.lrange(lkey, 0, -1)
-    trades = parse_trades(val)
-    Logger.info('[main]', get_ohlcv(trades))
+    def _queue_key(self, exchange_name, instrument):
+        return OhlcvProcessor._REDIS_QUEUE_KEY_FORMAT % (OhlcvProcessor._REDIS_KEY_PREFIX, exchange_name, instrument)
+
+    def process_period(self, queue_key, key):
+        threshold_date = datetime.now() - timedelta(seconds=5)
+        threshold_epoch = int(threshold_date.strftime("%s"))
+
+        match = OhlcvProcessor._PERIOD_REGEX.match(key)
+        if match:
+            epoch = int(match.group(1))
+            if epoch < threshold_epoch:
+                trade_datetime = datetime.fromtimestamp(epoch)
+
+                raw_trades = self.conn.lrange(key, 0, -1)
+                trades = self._parse_trades(raw_trades)
+                ohlcv = self._trades_ohlcv(trades)
+                print(trade_datetime)
+                print(ohlcv)
+
+                self.conn.delete(key)
+                self.conn.zrem(queue_key, key)
+
+    def process_instmts_queue(self, *args, **kwargs):
+        subscription_instmts: List[Instrument] = args[0]
+        from_index = args[1]
+        to_index = args[2]
+
+        if self.lock:
+            return
+
+        self.lock = True
+
+        for subscription_instmt in subscription_instmts:
+            exchange_name = subscription_instmt.exchange_name.lower()
+            instrument = subscription_instmt.instmt_name.lower()
+            queue_key = self._queue_key(exchange_name, instrument)
+
+            keys = self.conn.zrange(queue_key, from_index, to_index)
+
+            for key in keys:
+                val = key.decode('utf-8')
+                self.process_period(queue_key, val)
+
+        self.lock = False
 
 
 def main():
     parser = argparse.ArgumentParser(description='Create candles.')
+    parser.add_argument('-instmts', action='store', help='Instrument subscription file.', default='subscriptions.ini')
     parser.add_argument('-redis', action='store_true', help='Use Redis.')
 
     parser.add_argument('-redisdest', action='store', dest='redisdest',
@@ -82,9 +129,27 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    # Will run with a 5 second interval synced to the top of the minute
+    # Subscription instruments
+    if args.instmts is None or len(args.instmts) == 0:
+        print('Error: Please define the instrument subscription list. You can refer to subscriptions.ini.')
+        parser.print_help()
+        sys.exit(1)
+
+    # Initialize subscriptions
+    subscription_instmts = SubscriptionManager(args.instmts).get_subscriptions()
+    if len(subscription_instmts) == 0:
+        print('Error: No instrument is found in the subscription file. ' +
+              'Please check the file path and the content of the subscription file.')
+        parser.print_help()
+        sys.exit(1)
+
+    processor = OhlcvProcessor(conn=conn)
+
+    processor.process_instmts_queue(subscription_instmts, 0, -1)
+
+    # Calculate OHLCV every second
     Cron().schedule(
-        Tab(name='run_my_job').every(seconds=1).run(my_job, 'my_arg', conn=conn)
+        Tab(name='calculate_ohlcv').every(seconds=1).run(processor.process_instmts_queue, subscription_instmts, 0, 0)
     ).go()
 
 if __name__ == '__main__':
