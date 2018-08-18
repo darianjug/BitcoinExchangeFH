@@ -1,6 +1,6 @@
 asn1crypto==0.24.0
 cffi==1.11.5
-crontabs==0.1.4
+-e git://github.com/darianjug/crontabs@ebc8d46f7e09cec66cb13d9d785769b0849a3293#egg=crontabs
 cryptography==2.3
 daiquiri==1.5.0
 fleming==0.4.6

@@ -5,11 +5,7 @@ import pytz
 from pytz import utc
 
 from befh.clients.database import DatabaseClient
-from befh.util import Logger
 import threading
-import re
-import zmq
-import time
 import redis
 import re
 
