@@ -8,6 +8,8 @@ import redis
 from crontabs import Cron, Tab
 from datetime import datetime, timedelta
 
+from pytz import utc
+
 from befh.instrument import Instrument
 from befh.subscription_manager import SubscriptionManager
 from befh.util import Logger
@@ -20,6 +22,7 @@ class OhlcvProcessor:
     _REDIS_KEY_PREFIX = "befh_"
     _PERIOD_REGEX = re.compile(".*_.*_([0-9]{10})")
     _REDIS_QUEUE_KEY_FORMAT = "%setpq_%s_%s"
+    _REDIS_PRICES_KEY_FORMAT = "%setpr_%s_%s"
 
     def __init__(self, conn: redis.StrictRedis):
         """
@@ -55,9 +58,17 @@ class OhlcvProcessor:
     def _queue_key(self, exchange_name, instrument):
         return OhlcvProcessor._REDIS_QUEUE_KEY_FORMAT % (OhlcvProcessor._REDIS_KEY_PREFIX, exchange_name, instrument)
 
-    def process_period(self, queue_key, key):
-        threshold_date = datetime.now() - timedelta(seconds=5)
+    def _prices_key(self, exchange_name, instrument):
+        return OhlcvProcessor._REDIS_PRICES_KEY_FORMAT % (OhlcvProcessor._REDIS_KEY_PREFIX, exchange_name, instrument)
+
+    def process_period(self, queue_key, key, exchange_name, instrument):
+        clean_treshold = datetime.now(tz=utc) - timedelta(minutes=1)
+        clean_epoch = int(clean_treshold.strftime("%s"))
+
+        threshold_date = datetime.now(tz=utc) - timedelta(seconds=5)
         threshold_epoch = int(threshold_date.strftime("%s"))
+
+        prices_key = self._prices_key(exchange_name, instrument)
 
         match = OhlcvProcessor._PERIOD_REGEX.match(key)
         if match:
@@ -68,8 +79,14 @@ class OhlcvProcessor:
                 raw_trades = self.conn.lrange(key, 0, -1)
                 trades = self._parse_trades(raw_trades)
                 ohlcv = self._trades_ohlcv(trades)
-                print(trade_datetime)
-                print(ohlcv)
+                print("{} - {} {}: {}".format(trade_datetime, exchange_name, instrument, ohlcv))
+
+                prices_value = "{}/{}".format(epoch, ohlcv[3])
+
+                print("clean epoch {}".format(clean_epoch))
+                self.conn.zremrangebyscore(prices_key, "-inf", "({}".format(clean_epoch))
+                self.conn.zadd(prices_key, epoch, prices_value)
+                #self.conn.zremrangebyscore(prices_key, "-inf", "({}".format(clean_epoch))
 
                 self.conn.delete(key)
                 self.conn.zrem(queue_key, key)
@@ -93,7 +110,7 @@ class OhlcvProcessor:
 
             for key in keys:
                 val = key.decode('utf-8')
-                self.process_period(queue_key, val)
+                self.process_period(queue_key, val, exchange_name, instrument)
 
         self.lock = False
 
