@@ -14,11 +14,11 @@ class ExchGwBitfinexWs(WebSocketApiClient):
     """
     Exchange gateway BTCC RESTfulApi
     """
-    def __init__(self):
+    def __init__(self, proxy=None):
         """
         Constructor
         """
-        WebSocketApiClient.__init__(self, 'ExchGwBitfinex')
+        WebSocketApiClient.__init__(self, 'ExchGwBitfinex', proxy)
 
     @classmethod
     def get_link(cls):
@@ -160,12 +160,13 @@ class ExchGwBitfinex(ExchangeGateway):
     """
     Exchange gateway BTCC
     """
-    def __init__(self, db_clients):
+
+    def __init__(self, db_clients, proxy=None):
         """
         Constructor
         :param db_client: Database client
         """
-        ExchangeGateway.__init__(self, ExchGwBitfinexWs(), db_clients)
+        ExchangeGateway.__init__(self, ExchGwBitfinexWs(proxy=proxy), db_clients)
 
     @classmethod
     def get_exchange_name(cls):

@@ -9,6 +9,7 @@ import threading
 import redis
 import re
 
+
 class RedisClient(DatabaseClient):
     """
     Redis Client
@@ -127,7 +128,7 @@ class RedisClient(DatabaseClient):
                 now = datetime.now(tz=utc)
 
                 # Delay between now and trade date.
-                print("%{}".format(now - trade_date))
+                print("{} {}".format(instrument, (now - trade_date)))
 
                 period_key = "%setp_%s_%s_%d" % (RedisClient._REDIS_KEY_PREFIX,
                                                  exchange,

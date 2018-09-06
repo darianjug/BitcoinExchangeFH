@@ -4,7 +4,8 @@ class ApiSocket:
     """
     API socket
     """
-    def __init__(self):
+    def __init__(self, proxy=None):
+        self.proxy = proxy
         pass
 
     @classmethod

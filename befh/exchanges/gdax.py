@@ -16,8 +16,9 @@ class ExchGwApiGdaxOrderBook(RESTfulApiSocket):
     """
     Exchange gateway RESTfulApi
     """
-    def __init__(self):
-        RESTfulApiSocket.__init__(self)
+    def __init__(self, proxy=None):
+        self.proxy = proxy
+        RESTfulApiSocket.__init__(self, proxy=proxy)
 
     @classmethod
     def get_bids_field_name(cls):
@@ -76,13 +77,13 @@ class ExchGwApiGdaxOrderBook(RESTfulApiSocket):
         raise Exception("parse_trade should not be called.")
 
     @classmethod
-    def get_order_book(cls, instmt):
+    def get_order_book(cls, instmt, proxy=None):
         """
         Get order book
         :param instmt: Instrument
         :return: Object L2Depth
         """
-        res = cls.request(cls.get_order_book_link(instmt))
+        res = cls.request(cls.get_order_book_link(instmt), proxy=proxy)
         if len(res) > 0:
             return cls.parse_l2_depth(instmt=instmt,
                                        raw=res)
@@ -90,7 +91,7 @@ class ExchGwApiGdaxOrderBook(RESTfulApiSocket):
             return None
 
     @classmethod
-    def get_trades(cls, instmt):
+    def get_trades(cls, instmt, proxy=None):
         """
         Get trades
         :param instmt: Instrument
@@ -191,13 +192,14 @@ class ExchGwGdax(ExchangeGateway):
     """
     Exchange gateway
     """
-    def __init__(self, db_clients):
+    def __init__(self, db_clients, proxy=None):
         """
         Constructor
         :param db_client: Database client
         """
         ExchangeGateway.__init__(self, ExchGwApiGdaxTrades(), db_clients)
-        self.api_socket2 = ExchGwApiGdaxOrderBook()
+        self.api_socket2 = ExchGwApiGdaxOrderBook(proxy=proxy)
+
 
     @classmethod
     def get_exchange_name(cls):

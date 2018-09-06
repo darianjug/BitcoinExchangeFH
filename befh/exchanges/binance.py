@@ -14,8 +14,9 @@ class ExchGwApiBinance(RESTfulApiSocket):
     """
     Exchange gateway RESTfulApi
     """
-    def __init__(self):
-        RESTfulApiSocket.__init__(self)
+    def __init__(self, proxy=None):
+        self.proxy = proxy
+        RESTfulApiSocket.__init__(self, proxy=proxy)
 
     @classmethod
     def get_timestamp_offset(cls):
@@ -67,7 +68,7 @@ class ExchGwApiBinance(RESTfulApiSocket):
                 (instmt.get_instmt_code())
 
     @classmethod
-    def parse_l2_depth(cls, instmt, raw):
+    def parse_l2_depth(cls, instmt, raw, proxy=None):
         """
         Parse raw data to L2 depth
         :param instmt: Instrument
@@ -140,14 +141,14 @@ class ExchGwApiBinance(RESTfulApiSocket):
         return trade
 
     @classmethod
-    def get_order_book(cls, instmt):
+    def get_order_book(cls, instmt, proxy=None):
         """
         Get order book
         :param instmt: Instrument
         :return: Object L2Depth
         """
         # If verify cert, got <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)>
-        res = cls.request(cls.get_order_book_link(instmt), verify_cert=False)
+        res = cls.request(cls.get_order_book_link(instmt), verify_cert=False, proxy=proxy)
         if len(res) > 0:
             return cls.parse_l2_depth(instmt=instmt,
                                        raw=res)
@@ -155,7 +156,7 @@ class ExchGwApiBinance(RESTfulApiSocket):
             return None
 
     @classmethod
-    def get_trades(cls, instmt):
+    def get_trades(cls, instmt, proxy=None):
         """
         Get trades
         :param instmt: Instrument
@@ -164,7 +165,7 @@ class ExchGwApiBinance(RESTfulApiSocket):
         """
         link = cls.get_trades_link(instmt)
         # If verify cert, got <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed (_ssl.c:749)>
-        res = cls.request(link, verify_cert=False)
+        res = cls.request(link, verify_cert=False, proxy=proxy)
         trades = []
         if len(res) > 0:
             for t in res:
@@ -179,12 +180,12 @@ class ExchGwBinance(ExchangeGateway):
     """
     Exchange gateway
     """
-    def __init__(self, db_clients):
+    def __init__(self, db_clients, proxy=None):
         """
         Constructor
         :param db_client: Database client
         """
-        ExchangeGateway.__init__(self, ExchGwApiBinance(), db_clients)
+        ExchangeGateway.__init__(self, ExchGwApiBinance(proxy=proxy), db_clients)
 
     @classmethod
     def get_exchange_name(cls):
@@ -201,7 +202,7 @@ class ExchGwBinance(ExchangeGateway):
         """
         while True:
             try:
-                l2_depth = self.api_socket.get_order_book(instmt)
+                l2_depth = self.api_socket.get_order_book(instmt, proxy=self.api_socket.proxy)
                 if l2_depth is not None and l2_depth.is_diff(instmt.get_l2_depth()):
                     instmt.set_prev_l2_depth(instmt.get_l2_depth())
                     instmt.set_l2_depth(l2_depth)
@@ -218,7 +219,7 @@ class ExchGwBinance(ExchangeGateway):
         """
         while True:
             try:
-                ret = self.api_socket.get_trades(instmt)
+                ret = self.api_socket.get_trades(instmt, proxy=self.api_socket.proxy)
                 if ret is None or len(ret) == 0:
                     time.sleep(1)
                     continue

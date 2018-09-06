@@ -37,6 +37,16 @@ from befh.util import Logger
 
 
 def main():
+    # We should ignore SIGPIPE when using pycurl.NOSIGNAL - see
+    # the libcurl tutorial for more info.
+    try:
+        import signal
+        from signal import SIGPIPE, SIG_IGN
+    except ImportError:
+        pass
+    else:
+        signal.signal(SIGPIPE, SIG_IGN)
+
     parser = argparse.ArgumentParser(description='Bitcoin exchange market data feed handler.')
     parser.add_argument('-instmts', action='store', help='Instrument subscription file.', default='subscriptions.ini')
     parser.add_argument('-exchtime', action='store_true', help='Use exchange timestamp.')
@@ -85,6 +95,8 @@ def main():
                         default='')
     parser.add_argument('-output', action='store', dest='output',
                         help='Verbose output file path')
+    parser.add_argument('-proxy', action='store', dest='proxy',
+                        help='Proxy')
     args = parser.parse_args()
 
     Logger.init_log(args.output)
@@ -166,6 +178,10 @@ def main():
     if args.exchtime:
         ExchangeGateway.is_local_timestamp = False
 
+    proxy = None
+    if args.proxy:
+        proxy = args.proxy
+
     # Initialize subscriptions
     subscription_instmts = SubscriptionManager(args.instmts).get_subscriptions()
     if len(subscription_instmts) == 0:
@@ -187,25 +203,25 @@ def main():
     exch_gws.append(ExchGwBtccSpot(db_clients))
     exch_gws.append(ExchGwBtccFuture(db_clients))
     exch_gws.append(ExchGwBitmex(db_clients))
-    exch_gws.append(ExchGwBitfinex(db_clients))
+    exch_gws.append(ExchGwBitfinex(db_clients, proxy=proxy))
     exch_gws.append(ExchGwOkCoin(db_clients))
-    exch_gws.append(ExchGwKraken(db_clients))
-    exch_gws.append(ExchGwGdax(db_clients))
+    exch_gws.append(ExchGwKraken(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwGdax(db_clients, proxy=proxy))
     exch_gws.append(ExchGwBitstamp(db_clients))
-    exch_gws.append(ExchGwBitflyer(db_clients))
+    exch_gws.append(ExchGwBitflyer(db_clients, proxy=proxy))
     exch_gws.append(ExchGwHuoBi(db_clients))
-    exch_gws.append(ExchGwCoincheck(db_clients))
-    exch_gws.append(ExchGwCoinOne(db_clients))
-    exch_gws.append(ExchGwGatecoin(db_clients))
-    exch_gws.append(ExchGwQuoine(db_clients))
-    exch_gws.append(ExchGwPoloniex(db_clients))
-    exch_gws.append(ExchGwBittrex(db_clients))
-    exch_gws.append(ExchGwYunbi(db_clients))
-    exch_gws.append(ExchGwLiqui(db_clients))
-    exch_gws.append(ExchGwBinance(db_clients))
-    exch_gws.append(ExchGwCryptopia(db_clients))
+    exch_gws.append(ExchGwCoincheck(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwCoinOne(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwGatecoin(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwQuoine(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwPoloniex(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwBittrex(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwYunbi(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwLiqui(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwBinance(db_clients, proxy=proxy))
+    exch_gws.append(ExchGwCryptopia(db_clients, proxy=proxy))
     exch_gws.append(ExchGwOkex(db_clients))
-    exch_gws.append(ExchGwWex(db_clients))
+    exch_gws.append(ExchGwWex(db_clients, proxy=proxy))
     threads = []
     for exch in exch_gws:
         for instmt in subscription_instmts:

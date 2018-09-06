@@ -14,8 +14,9 @@ class ExchGwApiYunbi(RESTfulApiSocket):
     """
     Exchange gateway RESTfulApi
     """
-    def __init__(self):
-        RESTfulApiSocket.__init__(self)
+    def __init__(self, proxy=None):
+        self.proxy = proxy
+        RESTfulApiSocket.__init__(self, proxy=proxy)
 
     @classmethod
     def get_timestamp_offset(cls):
@@ -143,13 +144,13 @@ class ExchGwApiYunbi(RESTfulApiSocket):
         return trade
 
     @classmethod
-    def get_order_book(cls, instmt):
+    def get_order_book(cls, instmt, proxy=None):
         """
         Get order book
         :param instmt: Instrument
         :return: Object L2Depth
         """
-        res = cls.request(cls.get_order_book_link(instmt))
+        res = cls.request(cls.get_order_book_link(instmt), proxy=proxy)
         if len(res) > 0:
             return cls.parse_l2_depth(instmt=instmt,
                                        raw=res)
@@ -157,7 +158,7 @@ class ExchGwApiYunbi(RESTfulApiSocket):
             return None
 
     @classmethod
-    def get_trades(cls, instmt):
+    def get_trades(cls, instmt, proxy=None):
         """
         Get trades
         :param instmt: Instrument
@@ -165,7 +166,7 @@ class ExchGwApiYunbi(RESTfulApiSocket):
         :return: List of trades
         """
         link = cls.get_trades_link(instmt)
-        res = cls.request(link)
+        res = cls.request(link, proxy=proxy)
         trades = []
         if len(res) > 0:
             for t in res:
@@ -180,12 +181,12 @@ class ExchGwYunbi(ExchangeGateway):
     """
     Exchange gateway
     """
-    def __init__(self, db_clients):
+    def __init__(self, db_clients, proxy=None):
         """
         Constructor
         :param db_client: Database client
         """
-        ExchangeGateway.__init__(self, ExchGwApiYunbi(), db_clients)
+        ExchangeGateway.__init__(self, ExchGwApiYunbi(proxy=proxy), db_clients)
 
     @classmethod
     def get_exchange_name(cls):
@@ -202,7 +203,7 @@ class ExchGwYunbi(ExchangeGateway):
         """
         while True:
             try:
-                l2_depth = self.api_socket.get_order_book(instmt)
+                l2_depth = self.api_socket.get_order_book(instmt, proxy=self.api_socket.proxy)
                 if l2_depth is not None and l2_depth.is_diff(instmt.get_l2_depth()):
                     instmt.set_prev_l2_depth(instmt.get_l2_depth())
                     instmt.set_l2_depth(l2_depth)
@@ -219,7 +220,7 @@ class ExchGwYunbi(ExchangeGateway):
         """
         while True:
             try:
-                ret = self.api_socket.get_trades(instmt)
+                ret = self.api_socket.get_trades(instmt, proxy=self.api_socket.proxy)
                 if ret is None or len(ret) == 0:
                     time.sleep(1)
                     continue
